@@ -134,25 +134,13 @@ statement_
 	}
     / "if" _ "(" _ a3:e _ ")" _ a5:bracket_statements _ a6:elif {expression_types[a3] = "bool"; return ["if ",a3,"{",a5,"}",a6].join("");}
 	/ "if" _ "(" _ a3:e _ ")" _ a5:bracket_statements {expression_types[a3] = "bool"; return ["if ",a3,"{",a5,"}"].join("");}
-    / "function" __ name:var_name _ type_params:("<" _ type_parameters _ ">" _ / "") "(" _ b:function_parameters _ ")" _ t1:(":" _ type _ / "") "{" _ c:statements _ "}" {
+    / "function" __ name:var_name _ "(" _ b:function_parameters _ ")" _ t1:(":" _ type _ / "") "{" _ c:statements _ "}" {
 		let return_type = "@TypeOf("+initial_value[returned]()+")";
 		if(t1.length > 0){
 			return_type = t1[2]; 
 		}
-		if(type_params.length > 0){
-			return "fn "+name+"("+type_params[2]+",arguments:anytype) "+return_type+"{"+b+c+"}"
-		}
-		else{
-			return "fn "+name+"(arguments:anytype) "+return_type+"{"+b+c+"}"
-		}
+		return "fn "+name+"(arguments:anytype) "+return_type+"{"+b+c+"}";
 	}
-
-
-type_parameters = head:type tail:(_ (',') _ type)* {
-      return tail.reduce(function(result, element) {
-        return result + ",comptime " + element[3]+":type";
-      }, "comptime "+head+":type");
-    }
 
 identifiers = head:var_name tail:(_ (',') _ var_name)* {
       return tail.reduce(function(result, element) {
@@ -306,7 +294,7 @@ access_array = head:function_call tail:(_ access_array_)* {
 access_array_ = "[" _ a:e _ "]" {expression_types[a] = "float"; let to_return = "["+a+"]"; initial_value[to_return] = function(){return "[" + initial_value[a]() + "]";}; return to_return;}
 
 function_call
-  = head:callable type_params:("<" _ types _ ">" / "") tail:(_ function_call_ / "") {
+  = head:callable tail:(_ function_call_ / "") {
 	  var split_head = head.split(".");
       if(split_head.length === 2 && split_head[0] === "compiled_Math" && (["compiled_sin","compiled_cos","compiled_tan","compiled_sinh","compiled_cosh","compiled_tanh","compiled_abs","compiled_floor","compiled_ceil","compiled_exp","compiled_pow","compiled_log","compiled_log2","compiled_sqrt","compiled_trunc","compiled_sign"].indexOf(split_head[1]) !== -1)){
 	      let to_return = "@"+split_head[1].substring("compiled_".length,split_head[1].length) + tail[1];
