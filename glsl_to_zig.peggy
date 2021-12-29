@@ -53,32 +53,11 @@ class_statements = head:class_statement tail:( _ class_statement)* {
       }, head);
     }
 
-instance_method = name:var_name _ type_params:("<" _ type_parameters _ ">" _ / "") "(" _ b:function_parameters _ ")" _ t2:(":" _ type _ / "") "{" _ c:statements _ "}" {
-		let t1 = "@TypeOf("+initial_value[returned]()+")";
-		if(t2.length > 0){
-			t1 = t2[2];
-		}
-		return function(name1){return "fn "+name+"(self:"+name1+",arguments:anytype) "+t1+"{"+b+c+"}";}
-	}
-
-static_method = "static" __ name:var_name _ type_params:("<" _ type_parameters _ ">" _ / "") "(" _ b:function_parameters _ ")" _ (":" _ t2:type _ / "") "{" _ c:statements _ "}" {
-		let t1 = "@TypeOf("+initial_value[returned]()+")";
-		if(t2.length > 0){
-			t1 = t2[2];
-		}
-		if(type_params.length > 0){
-			return function(name1){return "fn "+name+"("+type_params[2]+",arguments:anytype) "+t1+"{"+b+c+"}";};
-		}
-		else{
-			return function(name1){return "fn "+name+"(arguments:anytype) "+return_type+"{"+b+c+"}";}
-		}
-	}
-
 constructor = "constructor" _ "(" _ params:function_parameters _ ")" _ "{" _ body:statements _ "}" {
 	return function(name1){return "pub fn init(arguments:anytype)"+name1+"{"+params+" var self = "+name1+"{"+class_members+"};"+body+"return self;}";};
 }
 
-class_statement = constructor / instance_method  / static_method / a:class_member _ ";" {return function(name1){return a(name1) + ","}}
+class_statement = a:class_member _ ";" {return function(name1){return a(name1) + ","}}
 
 class_member = a:var_name _ ":" _ b:type {
 	if(class_members !== "") class_members += ","; class_members += "."+a+"=undefined";
@@ -88,24 +67,11 @@ class_member = a:var_name _ ":" _ b:type {
 access_modifier= "public" / "private"
 
 class_=
-	"type" __ a:var_name _ "=" _ b:type ";" {return "\n#define "+a+" "+b+"\n";}
-	/ "interface" __ a2:var_name _ "{" _ a4:interface_statements _ "}" {return ["struct ",a2,"{",a4,"};"].join("");}
-	/ "enum" _ name:var_name _ "{" _ a:enum_members (_ "," / _) _ "}" {
-	  return "const "+name+"= enum {"+a+"};"
-	}
-	/ "class" __ name:var_name type_params:(_ "<" _ type_parameters _ ">" _ / "")  super_class:( _ "extends" _ var_name / "") _ "{" _ a4:class_statements _ "}" {
+	"struct" __ name:var_name _ "{" _ a4:class_statements _ "}" {
 		class_name = name;
 		let to_return = "";
 		let class_body = a4(name);
-		if(super_class.length > 0){
-			class_body = "usingnamespace "+super_class[3]+";"+a4(name);
-		}
-		if(type_params.length === 0){
-			to_return = "const "+name+" = struct{"+class_body+"};";
-		}
-		else{
-			to_return = "fn "+name+"("+type_params[3]+") type {return struct {"+class_body+"};}";
-		}
+		to_return = "fn "+name+"("+type_params[3]+") type {return struct {"+class_body+"};}";
 		return to_return;
 	}
 
@@ -169,16 +135,10 @@ statement_with_semicolon
 	}
 		
    / "return"  {return "return";}
-   / ("let" / "var") __ name:var_name _ "=" _ val:e {
-		initial_value[name]=function(){return val;}; return "var " + name+" = "+val;
-   }
-   / "const" __ name:var_name _ "=" _ val:e {
-		initial_value[name]=function(){return val;}; return "const " + name+" = "+val;
-   }
-   / ("let" / "var") __ name:var_name _ ":" _ t1:type _ "=" _ val:e {
+   / t1:type __ name:var_name _ "=" _ val:e {
 		initial_value[name]=function(){return val;}; return "var " + name+":"+t1+" = "+val;
    }
-   / "const" __ name:var_name _ ":" _ t1:type _ "=" _ val:e {
+   / "const" __ t1:type __ name:var_name _ "=" _ val:e {
 		initial_value[name]=function(){return val;}; return "const " + name+":"+t1+" = "+val;
    }
    / name:assignable _ a2:"=" _ val:e {
@@ -193,8 +153,10 @@ statement_with_semicolon
    / var_name
 
 
-type =  t1:type_ "[" "]" {return t1+"[]";} / "Array" "<" t1:type_ ">" {return type+"[]";} / type_
-type_ = name:IDENTIFIER {return name;}
+type =  t1:type_ "[" "]" {return t1+"[]";} / type_
+type_ = name:var_name {
+	return name;
+}
 types = head:type tail:(_ (',') _ type)* {
       return tail.reduce(function(result, element) {
         return result + element[1] + element[3];
@@ -223,7 +185,7 @@ e5
       return to_return;
     }
 
-e4_op= '!==' {return "!=";} / "===" {return "==";}
+e4_op= '!=' {return "!=";} / "==" {return "==";}
 
 e4
   = head:e3 tail:(_ ('<='/'<'/'>='/'>'/e4_op) _ e3)* {
@@ -356,15 +318,6 @@ callable=
 	
 	
 	}
-	/ "function" _ "(" _ params:function_parameters _ ")" _ t1:type _ "{" _ body:statements _ "}" {
-		return "struct{pub fn function(arguments:anytype) "+t1+"{"+params+body+"}}.function"
-	}
-	/ "class" _ super_class:("extends" __ var_name / "") _ "{" _ a4:class_statements _ "}" {
-		if(super_class.length > 0){
-			return "struct{usingnamespace "+super_class[3]+";"+a4(name)+"};";
-		}
-		return "const "+name+" = struct{"+a4(name)+"};";
-	}
 	/ dot_expr
     / STRING_LITERAL
     / a:NUMBER {expression_types[a] = "float"; return a;}
@@ -373,11 +326,7 @@ dot_expr = head:var_name tail:(_ ('.') _ var_name)* {
       let to_return = tail.reduce(function(result, element) {
         return result + element[1] + element[3];
       }, head);
-      if(to_return === "compiled_Math.PI")
-		return "radians(180)";
-	  else if(to_return === "compiled_Math.SQRT2")
-		return "sqrt(2.)";
-	  else return to_return;
+      return to_return;
     }
 
 
@@ -416,7 +365,7 @@ elif_ = a1:else_if _ "(" _ a3:e _ ")" _ a5:bracket_statements {return "else if("
 
 var_name= name:IDENTIFIER {
 let to_return = "";
-if(name == "this") to_return = "self"; else if(["true","false","undefined","void","break","continue","arguments"].includes(name)) to_return = name; else to_return = (name === "number"?"f64":name==="boolean"?"bool":"compiled_"+name);
+if(name == "this") to_return = "self"; else if(["true","false","undefined","void","break","continue","arguments"].includes(name)) to_return = name; else to_return = (name === "float"?"f32":name === "int"?"i32":name==="bool"?"bool":"compiled_"+name);
 if(initial_value[to_return] === undefined){initial_value[to_return] = function(){return to_return;};}
 return to_return;
 }
