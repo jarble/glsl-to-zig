@@ -59,7 +59,7 @@ constructor = "constructor" _ "(" _ params:function_parameters _ ")" _ "{" _ bod
 
 class_statement = a:class_member _ ";" {return function(name1){return a(name1) + ","}}
 
-class_member = a:var_name _ ":" _ b:type {
+class_member =  b:type __ a:var_name {
 	if(class_members !== "") class_members += ","; class_members += "."+a+"=undefined";
 	return function(name1){return a+":"+b;};
 }
@@ -67,17 +67,17 @@ class_member = a:var_name _ ":" _ b:type {
 access_modifier= "public" / "private"
 
 class_=
-	"struct" __ name:var_name _ "{" _ a4:class_statements _ "}" {
+	"struct" __ name:var_name _ "{" _ a4:class_statements _ "}" ";" {
 		class_name = name;
 		let to_return = "";
 		let class_body = a4(name);
-		to_return = "fn "+name+"("+type_params[3]+") type {return struct {"+class_body+"};}";
+		to_return = "fn "+name+"() type {return struct {"+class_body+"};}";
 		return to_return;
 	}
 
 statement =
 	a1:statement_ {return a1;}
-	/ a1:statement_with_semicolon _ (";" / "") {
+	/ a1:statement_with_semicolon _ ";" {
 		return a1+";"
 	}
 	
@@ -89,22 +89,11 @@ statement_
     / "do" _ a2:bracket_statements _ "while" _ "(" _ a5:e _ ")" _ ";" {return ["do ",a2," while(",a5,");"].join("");}
     / "switch" _ "(" _ a3:e _ ")" _ "{" _ a6:case_statements _ "}" {return ["switch(",a3,"){",a6,"}"].join("");}
     / "for" _ "(" _ a3:statement_with_semicolon _ ";" _ a5:e _ ";" _ a7:statement_with_semicolon _ ")" _ a9:bracket_statements {return a3+";"+"while("+a5+"){"+a9+a7+";"+"}";}
-    / "for" _ "(" _ ("let" / "var") _ item:var_name __ "of" __ the_arr:var_name _ ")" _ body:bracket_statements {
-		if(expression_types[item] !== undefined){
-			expression_types[the_arr] = expression_types[item]+"[]";
-		}
-		else if(expression_types[the_arr] !== undefined){
-			expression_types[item] = expression_types[the_arr].substring(0,expression_types[the_arr].length-2);
-		}
-		return "for("+the_arr+")|"+item+"|{"+body+"})";
-	}
     / "if" _ "(" _ a3:e _ ")" _ a5:bracket_statements _ a6:elif {expression_types[a3] = "bool"; return ["if ",a3,"{",a5,"}",a6].join("");}
 	/ "if" _ "(" _ a3:e _ ")" _ a5:bracket_statements {expression_types[a3] = "bool"; return ["if ",a3,"{",a5,"}"].join("");}
-    / t1:(type) __ name:var_name _ "(" _ b:function_parameters _ ")" _ "{" _ c:statements _ "}" {
+    / t1:type __ name:var_name _ "(" _ b:function_parameters _ ")" _ "{" _ c:statements _ "}" {
 		let return_type = "@TypeOf("+initial_value[returned]()+")";
-		if(t1.length > 0){
-			return_type = t1[2]; 
-		}
+		return_type = t1;
 		return "fn "+name+"(arguments:anytype) "+return_type+"{"+b+c+"}";
 	}
 
@@ -135,25 +124,30 @@ statement_with_semicolon
 	}
 		
    / "return"  {return "return";}
+   / t1:type_ __ name:var_name _ "[" _ "]" _ "=" _ val:e {
+		initial_value[name]=function(){return val;}; return "var " + name+":"+t1+"[] = "+val;
+   }
+   / t1:type_ __ name:var_name _ "[" _ size:e _ "]" _ "=" _ val:e {
+		initial_value[name]=function(){return val;}; return "var " + name+":"+t1+"["+size+"] = "+val;
+   }
    / t1:type __ name:var_name _ "=" _ val:e {
 		initial_value[name]=function(){return val;}; return "var " + name+":"+t1+" = "+val;
    }
+   / t1:type __ name:var_name {
+		return "var " + name + ":"+t1;
+   }
+   / "const" __ t1:type __ name:var_name {
+		return "const " + name + ":" + t1;
+   }
    / "const" __ t1:type __ name:var_name _ "=" _ val:e {
 		initial_value[name]=function(){return val;}; return "const " + name+":"+t1+" = "+val;
-   }
-   / name:assignable _ a2:"=" _ val:e {
-   		initial_value[name]=function(){return val;};
-   		if(temp_vars.indexOf(val) !== -1){declared_redundant_vars[val] = name; return "";}
-		else{
-			return name+a2+val;
-		}
    }
    / a1:assignable _ a2:("++" / "--") {return a1+a2;}
    / a1:assignable _ a2:("+=" / "%=" / "-=" / "*=" / "/=") _ a3:e {return a1+a2+a3;}
    / var_name
 
 
-type =  t1:type_ "[" "]" {return t1+"[]";} / type_
+type =  t1:type_ "[" _ "]" {return t1+"[]";} / t1:type_ "[" _ e1:e _ "]" {return t1+"["+e1+"]";} / type_
 type_ = name:var_name {
 	return name;
 }
@@ -310,8 +304,7 @@ enum_members = head:enum_member tail:(_ (',') _ enum_member)* {
 
 callable=
 	"(" _ a2:e _ ")" {let to_return  ="("+a2+")"; expression_types[to_return] = expression_types[a2]; return to_return;}
-	/ "new" __ a:dot_expr "(" b:exprs ")" {return a+".init("+b+")"}
-    / "[" a2:array_exprs "]" {return ".{"+a2[1]+"}";}
+    / type_ _ "[" _ "]" _ "(" a2:array_exprs ")" {return ".{"+a2[1]+"}";}
 	/ "{" _ a:object_members _ "}" {
 	
 	  return ".{"+a+"}"
